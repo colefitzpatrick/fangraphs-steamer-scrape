@@ -19,6 +19,152 @@ ws3 = wb3["Sheet1"]
 wb4 = openpyxl.load_workbook('teamacronyms.xlsx')
 ws4 = wb4["Sheet1"]
 
+def fantraxscrape():
+    fantraxurl = "https://www.fantrax.com/login"
+    fantraxurl2 = "https://www.fantrax.com/fantasy/league/v2omq3g1k5phrpoi/home"
+    fantraxurl3 = "https://www.fantrax.com/fantasy/league/v2omq3g1k5phrpoi/players"
+    fantrax_wb = openpyxl.load_workbook('fantrax.xlsx')
+    fantrax_ws = fantrax_wb["Sheet1"]
+    standings_wb = openpyxl.load_workbook('standings.xlsx')
+    standings_ws = standings_wb["Sheet1"]
+
+    # create a new Firefox session
+    driver = webdriver.Chrome()
+    time.sleep(5)
+    driver.get(fantraxurl)
+    time.sleep(5)
+
+    #enters login information
+    #username = driver.find_element_by_id("mat-input-0")
+    username = driver.find_element_by_xpath("//input[@formcontrolname='email']")
+    username.clear()
+    username.send_keys("OMITTED")            #<-------username input
+
+    #password = driver.find_element_by_id("mat-input-1")
+    password = driver.find_element_by_xpath("//input[@formcontrolname='password']")
+    password.clear()
+    password.send_keys("OMITTED")             #<-------password input
+
+    driver.implicitly_wait(3)
+
+    #clicks submit
+    loginbutton = driver.find_element_by_xpath("//button[@type='submit']")
+    driver.execute_script("arguments[0].click();", loginbutton)
+
+    time.sleep(5)
+    driver.get(fantraxurl2)
+    time.sleep(3)
+
+    soup_level3=BeautifulSoup(driver.page_source, 'lxml')
+
+    for tr in soup_level3.findAll("tr", {"class": "ng-star-inserted"}):
+        info = []
+        for td in tr.findAll("td", {"class": "ng-star-inserted"}):
+            info.append(td.text)
+        if len(info) > 0:
+            teamname = info[1].strip()
+            print(teamname)
+            teamrecord = info[2].strip()
+            print(teamrecord)
+            dashpos = teamrecord.find('-')    #finds the dash position
+            lenrecord = len(teamrecord)     #gets the length of the record value
+            ties = lenrecord - 1      #gets the position of the last dash
+            equivwins = int(teamrecord[:dashpos]) + (0.5 * int(teamrecord[ties:]))      #wins + 1/2 * ties = equivalent wins
+            existingrecords.update( { teamname : equivwins} )    #updates the dictionary with the team/record pair
+            standings_ws.cell(row=standingsrow, column=1).value = teamname
+            standings_ws.cell(row=standingsrow, column=2).value = teamrecord
+            standings_ws.cell(row=standingsrow, column=3).value = equivwins
+            splitrecord = teamrecord.split('-')   #splits the record string using dash delimiter
+            totalgamesplayed = int(splitrecord[0]) + int(splitrecord[1]) + int(splitrecord[2])      #sums wins losses and ties to get number of games played
+            standingsrow += 1
+        else:
+            continue
+        print(info)
+    print("Standings Scrape Complete")
+    standings_wb.save('standings.xlsx')
+
+    time.sleep(5)
+
+    driver.get(fantraxurl3)
+    
+    #clicks the players page
+    #players = driver.find_element_by_xpath('/html/body/app-root/div/div[2]/app-leagues-header/nav/div/div[4]/a')
+    #driver.execute_script("arguments[0].click();", players)
+
+    time.sleep(5)
+
+    #click the status/team dropdown
+    status_selector = driver.find_element_by_xpath('/html/body/app-root/div/div[2]/div/app-league-players/div/section/filter-panel/div/div[4]/div[1]/mat-form-field/div/div[1]/div[3]/mat-select/div/div[1]')
+    driver.execute_script("arguments[0].click();", status_selector)
+
+    driver.implicitly_wait(1)
+
+    #select All Taken Players
+    try:
+        taken_selector = driver.find_element_by_xpath('/html/body/div[4]/div[2]/div/div/div/mat-option[5]/span')
+    except NoSuchElementException:
+        taken_selector = driver.find_element_by_xpath('/html/body/div[5]/div[2]/div/div/div/mat-option[5]/span')
+    driver.execute_script("arguments[0].click();", taken_selector)
+
+    time.sleep(3)  #gives time to load
+
+    #select the rows per page dropdown
+    perpage = driver.find_element_by_xpath('/html/body/app-root/div/div[2]/div/app-league-players/div/section/div[2]/pagination/div[4]/button/span')
+    driver.execute_script("arguments[0].click();", perpage)
+
+    driver.implicitly_wait(1)
+
+    #select 500 per page
+    try:
+        fivehundredper = driver.find_element_by_xpath('/html/body/div[4]/div[2]/div/div/div/div/button[5]')
+    except NoSuchElementException:
+        fivehundredper = driver.find_element_by_xpath('/html/body/div[5]/div[2]/div/div/div/div/button[5]')
+    driver.execute_script("arguments[0].click();", fivehundredper)
+
+    time.sleep(3) #gives time to load
+
+    soup_level2=BeautifulSoup(driver.page_source, 'lxml')
+
+    writerow = 2
+    for tr in soup_level2.findAll("td", {"class": "ng-star-inserted"}):
+        tds = tr.findAll("div", {"class": "scorer__info"})
+        for td in tds:
+            playername = td.findAll("div", {"class": "scorer__info__name"})
+            playerpos = td.findAll("div", {"class": "scorer__info__positions"})
+            for player in playername:
+                fantrax_ws.cell(row=writerow, column=1).value = player.text     #writes the player name to the first column
+            for player1 in playerpos:
+                posandteam = player1.findAll("span")
+                for entry in posandteam:
+                    if len(entry.text) > 5 and entry.text.count(',') == 0:
+                        continue
+                    elif entry.text in ['C','1B','2B','3B','OF','SP','SS','RP','P','UT'] or entry.text.count(',') >= 1:
+                        fantrax_ws.cell(row=writerow, column=2).value = entry.text        #writes the player position(s) to the 2nd column
+                    elif entry.text == "(R)":
+                        continue
+                    elif entry.text == '-':
+                        continue
+                    elif entry.text == "":
+                        continue
+                    else:
+                        fantrax_ws.cell(row=writerow, column=3).value = entry.text[1:]     #writes the player's MLB team to the 3rd column
+            writerow += 1
+
+    writerow = 1
+    for tr1 in soup_level2.findAll("tr", {"class": "ng-star-inserted"}):
+        tds1 = tr1.findAll("table-cell", {"class": "ng-star-inserted"})
+        rowvalues = []
+        for td1 in tds1:
+            rowvalues.append(td1.text)
+        fantrax_ws.cell(row=writerow, column=4).value = rowvalues[1]       #writes the player's fantasy team
+        fantrax_ws.cell(row=writerow, column=5).value = rowvalues[5]       #writes the player's total points
+        fantrax_ws.cell(row=writerow, column=6).value = rowvalues[6]       #writes the player's points per game
+        writerow += 1
+
+
+    fantrax_wb.save('fantrax.xlsx')
+
+
 #### scrapes either the pitcher or hitter projections from fangraphs, specificy the worksheet to write to and the number of pages to scrape ####
 
 def steamerscrape(link, pages, worksheet):
@@ -163,7 +309,13 @@ def ppglinker():
     wb3.save('fantrax.xlsx')
     print("Linker complete")
 
+def sortplayers():
+    fantraxdata = pd.read_excel('fantrax.xlsx')
+    print(fantraxdata)
+
 #### section where you call the various functions depending on what you need ####
+
+fantraxscrape()
 
 steamerscrape(url, 25, ws_write)               #scrapes hitter projections
 steamerscrape(url2, 25, ws2_write)              #scrapers pitcher projections
@@ -175,5 +327,7 @@ hitterppgproj()                                #calculate hitter ppg
 pitcherppgproj()                               #calculate pitcher ppg
 
 ppglinker()                                    #link steamer projections into the fantrax sheet
+
+sortplayers()
         
 
