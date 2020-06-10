@@ -6,6 +6,8 @@ import pandas as pd
 import os
 import time
 import openpyxl
+import requests
+import warnings
 os.chdir('c:\\Python\\colefitzpatrick_python\\FantasyBaseballProjection')
 
 url = "https://www.fangraphs.com/projections.aspx?pos=all&stats=bat&type=steamer"
@@ -14,22 +16,26 @@ url2 = "https://www.fangraphs.com/projections.aspx?pos=all&stats=pit&type=steame
 wb_write = openpyxl.load_workbook('steamer.xlsx')
 ws_write = wb_write["hitters"]
 ws2_write = wb_write["pitchers"]
-wb3 = openpyxl.load_workbook('fantrax.xlsx')
-ws3 = wb3["Sheet1"]
+#wb3 = openpyxl.load_workbook('fantrax.xlsx')
+#ws3 = wb3["Sheet1"]
 wb4 = openpyxl.load_workbook('teamacronyms.xlsx')
 ws4 = wb4["Sheet1"]
+fantrax_wb = openpyxl.load_workbook('fantrax.xlsx')
+fantrax_ws = fantrax_wb["Sheet1"]
+standings_wb = openpyxl.load_workbook('standings.xlsx')
+standings_ws = standings_wb["Sheet1"]
 
 def fantraxscrape():
     fantraxurl = "https://www.fantrax.com/login"
     fantraxurl2 = "https://www.fantrax.com/fantasy/league/v2omq3g1k5phrpoi/home"
     fantraxurl3 = "https://www.fantrax.com/fantasy/league/v2omq3g1k5phrpoi/players"
-    fantrax_wb = openpyxl.load_workbook('fantrax.xlsx')
-    fantrax_ws = fantrax_wb["Sheet1"]
-    standings_wb = openpyxl.load_workbook('standings.xlsx')
-    standings_ws = standings_wb["Sheet1"]
 
-    # create a new Firefox session
-    driver = webdriver.Chrome()
+
+    # create a new Chrome session
+    options = webdriver.ChromeOptions()
+    options.add_argument("--start-maximized")
+    driver = webdriver.Chrome(chrome_options=options)
+    #driver = webdriver.Firefox()
     time.sleep(5)
     driver.get(fantraxurl)
     time.sleep(5)
@@ -57,20 +63,20 @@ def fantraxscrape():
 
     soup_level3=BeautifulSoup(driver.page_source, 'lxml')
 
+    standingsrow = 1
+
     for tr in soup_level3.findAll("tr", {"class": "ng-star-inserted"}):
         info = []
         for td in tr.findAll("td", {"class": "ng-star-inserted"}):
             info.append(td.text)
         if len(info) > 0:
             teamname = info[1].strip()
-            print(teamname)
             teamrecord = info[2].strip()
-            print(teamrecord)
             dashpos = teamrecord.find('-')    #finds the dash position
             lenrecord = len(teamrecord)     #gets the length of the record value
             ties = lenrecord - 1      #gets the position of the last dash
             equivwins = int(teamrecord[:dashpos]) + (0.5 * int(teamrecord[ties:]))      #wins + 1/2 * ties = equivalent wins
-            existingrecords.update( { teamname : equivwins} )    #updates the dictionary with the team/record pair
+            #existingrecords.update( { teamname : equivwins} )    #updates the dictionary with the team/record pair
             standings_ws.cell(row=standingsrow, column=1).value = teamname
             standings_ws.cell(row=standingsrow, column=2).value = teamrecord
             standings_ws.cell(row=standingsrow, column=3).value = equivwins
@@ -79,18 +85,11 @@ def fantraxscrape():
             standingsrow += 1
         else:
             continue
-        print(info)
     print("Standings Scrape Complete")
     standings_wb.save('standings.xlsx')
 
     time.sleep(5)
-
-    driver.get(fantraxurl3)
-    
-    #clicks the players page
-    #players = driver.find_element_by_xpath('/html/body/app-root/div/div[2]/app-leagues-header/nav/div/div[4]/a')
-    #driver.execute_script("arguments[0].click();", players)
-
+    driver.get(fantraxurl3)  
     time.sleep(5)
 
     #click the status/team dropdown
@@ -126,6 +125,7 @@ def fantraxscrape():
     soup_level2=BeautifulSoup(driver.page_source, 'lxml')
 
     writerow = 2
+
     for tr in soup_level2.findAll("td", {"class": "ng-star-inserted"}):
         tds = tr.findAll("div", {"class": "scorer__info"})
         for td in tds:
@@ -150,7 +150,7 @@ def fantraxscrape():
                         fantrax_ws.cell(row=writerow, column=3).value = entry.text[1:]     #writes the player's MLB team to the 3rd column
             writerow += 1
 
-    writerow = 1
+    writerow = 2
     for tr1 in soup_level2.findAll("tr", {"class": "ng-star-inserted"}):
         tds1 = tr1.findAll("table-cell", {"class": "ng-star-inserted"})
         rowvalues = []
@@ -161,7 +161,9 @@ def fantraxscrape():
         fantrax_ws.cell(row=writerow, column=6).value = rowvalues[6]       #writes the player's points per game
         writerow += 1
 
-
+    
+    
+    print("Fantrax player scrape complete")
     fantrax_wb.save('fantrax.xlsx')
 
 
@@ -275,13 +277,13 @@ def pitcherppgproj():
 def ppglinker():
     hitterrows = ws_write.max_row
     pitcherrows = ws2_write.max_row
-    fantraxrows = ws3.max_row
-    for player in range(1,fantraxrows):
+    fantraxrows = fantrax_ws.max_row
+    for player in range(2,fantraxrows):
         namelist = []
-        namelist = ws3.cell(row=player, column=1).value.split()
-        fantraxmlbteam = ws3.cell(row=player, column=3).value
-        fantraxplayername = ws3.cell(row=player, column=1).value
-        fantraxposition = ws3.cell(row=player, column=2).value
+        namelist = fantrax_ws.cell(row=player, column=1).value.split()
+        fantraxmlbteam = fantrax_ws.cell(row=player, column=3).value
+        fantraxplayername = fantrax_ws.cell(row=player, column=1).value
+        fantraxposition = fantrax_ws.cell(row=player, column=2).value
         if fantraxposition in ['SP','RP','SP,RP']:
             for fangraphplayer in range(2,pitcherrows): #links pitchers first
                 fgnamelist = []
@@ -289,9 +291,9 @@ def ppglinker():
                 fgmlbteam = ws2_write.cell(row=fangraphplayer, column=2).value
                 fgplayername = ws2_write.cell(row=fangraphplayer, column=1).value
                 if namelist[0][:3].lower() == fgnamelist[0][:3].lower() and namelist[1][:4].lower() == fgnamelist[1][:4].lower() and fantraxmlbteam == fgmlbteam:
-                    ws3.cell(row=player, column=7).value = ws2_write.cell(row=fangraphplayer, column=23).value
+                    fantrax_ws.cell(row=player, column=7).value = ws2_write.cell(row=fangraphplayer, column=23).value
                 elif fgplayername[:3].lower() == fantraxplayername[:3].lower() and fgplayername[-3:].lower() == fantraxplayername[-3:].lower() and fantraxmlbteam == fgmlbteam:
-                    ws3.cell(row=player, column=7).value = ws2_write.cell(row=fangraphplayer, column=23).value
+                    fantrax_ws.cell(row=player, column=7).value = ws2_write.cell(row=fangraphplayer, column=23).value
                 else:
                     continue
         else:
@@ -301,33 +303,135 @@ def ppglinker():
                 fgmlbteam = ws_write.cell(row=fangraphplayer, column=2).value
                 fgplayername = ws_write.cell(row=fangraphplayer, column=1).value
                 if namelist[0][:3].lower() == fgnamelist[0][:3].lower() and namelist[1][:4].lower() == fgnamelist[1][:4].lower() and fantraxmlbteam == fgmlbteam:
-                    ws3.cell(row=player, column=7).value = ws_write.cell(row=fangraphplayer, column=27).value
+                    fantrax_ws.cell(row=player, column=7).value = ws_write.cell(row=fangraphplayer, column=27).value
                 elif fgplayername[:3].lower() == fantraxplayername[:3].lower() and fgplayername[-3:].lower() == fantraxplayername[-3:].lower() and fantraxmlbteam == fgmlbteam:
-                    ws3.cell(row=player, column=7).value = ws_write.cell(row=fangraphplayer, column=27).value
+                    fantrax_ws.cell(row=player, column=7).value = ws_write.cell(row=fangraphplayer, column=27).value
                 else: 
                     continue
-    wb3.save('fantrax.xlsx')
+    fantrax_wb.save('fantrax.xlsx')
     print("Linker complete")
 
 def sortplayers():
+    warnings.filterwarnings("ignore")
     fantraxdata = pd.read_excel('fantrax.xlsx')
-    print(fantraxdata)
+    ownership = fantraxdata[["Player Name", "Position", "MLB Team", "Fantrax Team", "PPG"]]
+    teams = ['AMH', 'BRK', 'CHI', 'DEN', 'FW', 'HAL', 'LA', 'NO', 'NP', 'OK', 'PRI', 'TOR']
+
+    positionorder = ['C', '2B', 'SS', '3B', '1B', 'OF']
+    for team in teams:
+        bestroster = ownership[ownership.PPG > 25]
+        removeposlist = []
+        removenamelist = []
+        for pos in positionorder:
+            maxscorer = ownership[ownership.PPG == ownership.PPG.max()]
+            teamroster2 = ownership[(ownership["Fantrax Team"] == team)]
+            teamroster = teamroster2.fillna(0)
+            specificteam = ownership[(ownership["Fantrax Team"] == team) & (ownership['Position'].str.contains(pos))]
+            if pos != 'OF':
+                positionscorer = specificteam[specificteam.PPG == specificteam.PPG.max()]
+                positionscorer['Assigned Position'] = pos
+                bestroster = pd.concat([positionscorer,bestroster])
+            else:
+                positionscorer = specificteam.nlargest(3,'PPG')
+                positionscorer['Assigned Position'] = pos
+                bestroster = pd.concat([positionscorer,bestroster])
+        duplicates = bestroster[bestroster.duplicated(['Player Name'],keep=False)]
+        lengthdupes = len(duplicates.index)
+        
+        if lengthdupes > 0:
+            duplicateadd = bestroster[bestroster.duplicated(["Player Name"])]
+            replacementppg = []
+            replacementppg2 = []
+            bestoptionnames = []
+            dupepos = duplicates['Assigned Position'].tolist()
+            
+            for possearch in range(0,lengthdupes):
+                replacementpool = teamroster[(teamroster['Position'].str.contains(duplicates.iloc[possearch]['Assigned Position'])) & (~teamroster.index.isin(bestroster.index))]
+
+                if len(replacementpool.index) > 0:
+                    bestoption = replacementpool[replacementpool.PPG == replacementpool.PPG.max()]
+                    bestoptionnames.append(bestoption.iloc[0]["Player Name"])
+                else:
+                    continue
+                
+                if possearch in (0,1) and len(bestoption.index) > 0:    
+                    replacementppg.append(bestoption.iloc[0]['PPG'])                    
+                elif possearch in (2,3) and len(bestoption.index) > 0:
+                    replacementppg2.append(bestoption.iloc[0]['PPG'])
+                else:
+                    continue
+
+
+                          
+                
+            if len(replacementppg) > 1:
+                maxppgchoice = max(replacementppg)
+            else:
+                maxppgchoice = replacementppg[0]
+
+            replacementchoice = teamroster[(teamroster['PPG'] == maxppgchoice) & (teamroster['Player Name'].isin(bestoptionnames))]
+
+            for dupeposition in dupepos:
+                if dupeposition in replacementchoice.iloc[0]['Position']:
+
+                    removeposlist.append(dupeposition)
+                    removenamelist.append(duplicates["Player Name"][duplicates['Assigned Position'] == dupeposition].iloc[0])
+                else:
+                    continue
+            
+
+            if lengthdupes > 2:
+                if len(replacementppg2) > 1:
+                    maxppgchoice2 = max(replacementppg2)
+                else:
+                    maxppgchoice2 = replacementppg2[0]
+                    
+                replacementchoice2 = teamroster[(teamroster['PPG'] == maxppgchoice2) & (teamroster['Player Name'].isin(bestoptionnames))]
+            
+                for dupeposition in dupepos:
+                    if dupeposition in replacementchoice2.iloc[0]['Position']:
+                        removeposlist.append(dupeposition)
+                        removenamelist.append(duplicates["Player Name"][duplicates['Assigned Position'] == dupeposition].iloc[0])
+                    else:
+                        continue
+
+            posremoves = bestroster[(~bestroster["Assigned Position"].isin(removeposlist)) & (~bestroster["Player Name"].isin(removenamelist))]
+
+
+            if lengthdupes < 3:
+                finalroster = pd.concat([posremoves, duplicateadd, replacementchoice],axis=0,ignore_index=True)
+                print(team)
+                print(finalroster)  
+            else:
+                finalroster = pd.concat([posremoves, duplicateadd, replacementchoice, replacementchoice2],axis=0,ignore_index=True)
+                print(team)
+                print(finalroster)
+
+        else:
+            finalroster = bestroster
+            print(team)
+            print(finalroster)
+            continue
+        
+        
+        
 
 #### section where you call the various functions depending on what you need ####
 
-fantraxscrape()
+##fantraxscrape()
 
-steamerscrape(url, 25, ws_write)               #scrapes hitter projections
-steamerscrape(url2, 25, ws2_write)              #scrapers pitcher projections
+##steamerscrape(url, 25, ws_write)               #scrapes hitter projections
+##steamerscrape(url2, 25, ws2_write)              #scrapers pitcher projections
+##
+##teamacronyms(ws_write)                          #assign team acronyms to hitter sheet
+##teamacronyms(ws2_write)                         #assign team acronyms to pitcher sheet
+##
+##hitterppgproj()                                #calculate hitter ppg
+##pitcherppgproj()                               #calculate pitcher ppg
+##
 
-teamacronyms(ws_write)                          #assign team acronyms to hitter sheet
-teamacronyms(ws2_write)                         #assign team acronyms to pitcher sheet
+##ppglinker()                                    #link steamer projections into the fantrax sheet
 
-hitterppgproj()                                #calculate hitter ppg
-pitcherppgproj()                               #calculate pitcher ppg
-
-ppglinker()                                    #link steamer projections into the fantrax sheet
-
-sortplayers()
+sortplayers()                                   #sorts player rosters to find optimal starting lineup
         
 
