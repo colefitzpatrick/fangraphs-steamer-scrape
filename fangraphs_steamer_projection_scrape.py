@@ -64,7 +64,8 @@ def fantraxscrape():
     soup_level3=BeautifulSoup(driver.page_source, 'lxml')
 
     standingsrow = 1
-
+    
+    #scrapes the standings on the league homepage
     for tr in soup_level3.findAll("tr", {"class": "ng-star-inserted"}):
         info = []
         for td in tr.findAll("td", {"class": "ng-star-inserted"}):
@@ -125,7 +126,8 @@ def fantraxscrape():
     soup_level2=BeautifulSoup(driver.page_source, 'lxml')
 
     writerow = 2
-
+    
+    #scrapes the player data table
     for tr in soup_level2.findAll("td", {"class": "ng-star-inserted"}):
         tds = tr.findAll("div", {"class": "scorer__info"})
         for td in tds:
@@ -311,75 +313,77 @@ def ppglinker():
     fantrax_wb.save('fantrax.xlsx')
     print("Linker complete")
 
+#### Sorts the players from the fantrax spreadsheet to the optimal starting lineup and pitching rotation for each team ####    
+    
 def sortplayers():
     warnings.filterwarnings("ignore")
     fantraxdata = pd.read_excel('fantrax.xlsx')
-    ownership = fantraxdata[["Player Name", "Position", "MLB Team", "Fantrax Team", "PPG"]]
-    teams = ['AMH', 'BRK', 'CHI', 'DEN', 'FW', 'HAL', 'LA', 'NO', 'NP', 'OK', 'PRI', 'TOR']
+    ownership = fantraxdata[["Player Name", "Position", "MLB Team", "Fantrax Team", "PPG"]]       #removes extraneous columns from the fantrax spreadsheet
+    teams = ['AMH', 'BRK', 'CHI', 'DEN', 'FW', 'HAL', 'LA', 'NO', 'NP', 'OK', 'PRI', 'TOR']       #teams in the fantasy league to loop through
 
-    positionorder = ['C', '2B', 'SS', '3B', '1B', 'OF']
+    positionorder = ['C', '2B', 'SS', '3B', '1B', 'OF']    #priority order for assigning players to positions with the most scarce positions first
     for team in teams:
-        bestroster = ownership[ownership.PPG > 25]
-        removeposlist = []
-        removenamelist = []
+        bestroster = ownership[ownership.PPG > 30]         #basically just creates a blank list by using a filter that applies to no players
+        removeposlist = []                                  #blank list that will later be used to store the positions of the players to remove
+        removenamelist = []                                 #blank list that will later be used to store the names of the players to remove
         for pos in positionorder:
-            maxscorer = ownership[ownership.PPG == ownership.PPG.max()]
-            teamroster2 = ownership[(ownership["Fantrax Team"] == team)]
-            teamroster = teamroster2.fillna(0)
-            specificteam = ownership[(ownership["Fantrax Team"] == team) & (ownership['Position'].str.contains(pos))]
-            if pos != 'OF':
-                positionscorer = specificteam[specificteam.PPG == specificteam.PPG.max()]
-                positionscorer['Assigned Position'] = pos
-                bestroster = pd.concat([positionscorer,bestroster])
+            maxscorer = ownership[ownership.PPG == ownership.PPG.max()]         #pretty sure this isn't needed - confirm later
+            teamroster2 = ownership[(ownership["Fantrax Team"] == team)]        #gets the complete roster of the specific team in the loop
+            teamroster = teamroster2.fillna(0)                                  #converts the NAs to 0s
+            specificteam = ownership[(ownership["Fantrax Team"] == team) & (ownership['Position'].str.contains(pos))]    #gets the list of players eligible at each position in the loop for each team in the loop
+            if pos != 'OF':     #outfielders are seperated since we are selecting 3 OF and only 1 of each other position
+                positionscorer = specificteam[specificteam.PPG == specificteam.PPG.max()]   #selects the player at that position group who is highest scorer
+                positionscorer['Assigned Position'] = pos    #assigns the position in the loop to that player, since they may be eligible at multiple
+                bestroster = pd.concat([positionscorer,bestroster])     #adds this player to the team's "best roster"
             else:
-                positionscorer = specificteam.nlargest(3,'PPG')
-                positionscorer['Assigned Position'] = pos
-                bestroster = pd.concat([positionscorer,bestroster])
-        duplicates = bestroster[bestroster.duplicated(['Player Name'],keep=False)]
-        lengthdupes = len(duplicates.index)
+                positionscorer = specificteam.nlargest(3,'PPG')     #selects the three highest scoring players with OF eligibility
+                positionscorer['Assigned Position'] = pos           #assigns these three players as OF
+                bestroster = pd.concat([positionscorer,bestroster]) #adds these three players to best roster
+        duplicates = bestroster[bestroster.duplicated(['Player Name'],keep=False)]      #finds the player(s) that appear twice on the best roster list (ie. they are eligible at more than one position), lists them twice, once for each position they are assigned to
+        lengthdupes = len(duplicates.index)     #gets the length of this duplicate list 
         
-        if lengthdupes > 0:
-            duplicateadd = bestroster[bestroster.duplicated(["Player Name"])]
-            replacementppg = []
-            replacementppg2 = []
-            bestoptionnames = []
-            dupepos = duplicates['Assigned Position'].tolist()
+        if lengthdupes > 0:          #only works on the teams that have a player assigned twice to different positions
+            duplicateadd = bestroster[bestroster.duplicated(["Player Name"])]        #the list of duplicate players with each player appearing only once, we'll use this at the end
+            replacementppg = []       #blank list that we'll be adding the ppg value for our selected replacement player
+            replacementppg2 = []      #blank list that we'll be using for teams who have two duplicate players
+            bestoptionnames = []      #blank list that we'll be using to add the names of the best option at each position where we need to find a replacement for a duplicate
+            dupepos = duplicates['Assigned Position'].tolist()      #converts the duplicates in the dataframe to just a list of the duplicate positions
             
-            for possearch in range(0,lengthdupes):
+            for possearch in range(0,lengthdupes):      #loops through each duplicate player
+                #replacement pool looks for all the players in the teamroster dataframe whose position matches the assigned position of the duplicate player position that is currently in the loop (possearch) & who do not already appear in the bestroster
                 replacementpool = teamroster[(teamroster['Position'].str.contains(duplicates.iloc[possearch]['Assigned Position'])) & (~teamroster.index.isin(bestroster.index))]
 
-                if len(replacementpool.index) > 0:
-                    bestoption = replacementpool[replacementpool.PPG == replacementpool.PPG.max()]
-                    bestoptionnames.append(bestoption.iloc[0]["Player Name"])
-                else:
+                if len(replacementpool.index) > 0:      #makes sure there is a valid replacement option
+                    bestoption = replacementpool[replacementpool.PPG == replacementpool.PPG.max()]       #finds the player in the replacement pool with the maximum ppg, assigns them as the bestoption
+                    bestoptionnames.append(bestoption.iloc[0]["Player Name"])      #adds the players name to the bestoptionnames list
+                else:       #skips the best option selection if there is no replacement pool at that position
                     continue
                 
-                if possearch in (0,1) and len(bestoption.index) > 0:    
-                    replacementppg.append(bestoption.iloc[0]['PPG'])                    
+                #the duplicates list will always show a player two times, once for each position they are assigned, so for the first and second items in list, it goes to the first list and 3rd and 4th go to the second list
+                if possearch in (0,1) and len(bestoption.index) > 0:   
+                    replacementppg.append(bestoption.iloc[0]['PPG'])        #adds the ppg of the best options to the first list     
                 elif possearch in (2,3) and len(bestoption.index) > 0:
-                    replacementppg2.append(bestoption.iloc[0]['PPG'])
+                    replacementppg2.append(bestoption.iloc[0]['PPG'])       #if there are more than 1 duplicate, adds ppg of the best options to second list
                 else:
                     continue
-
-
-                          
-                
-            if len(replacementppg) > 1:
+                    
+            if len(replacementppg) > 1:                 #if there are best options at each position, select the max
                 maxppgchoice = max(replacementppg)
-            else:
+            else:                                       #if there is only one best option, select it
                 maxppgchoice = replacementppg[0]
 
+            #replacement choice uses the ppg found in the last step to select the player, prevents mismatch by looking for the name in bestoptionnames
             replacementchoice = teamroster[(teamroster['PPG'] == maxppgchoice) & (teamroster['Player Name'].isin(bestoptionnames))]
-
+            
+            #finds the names and positions to remove
             for dupeposition in dupepos:
                 if dupeposition in replacementchoice.iloc[0]['Position']:
-
                     removeposlist.append(dupeposition)
                     removenamelist.append(duplicates["Player Name"][duplicates['Assigned Position'] == dupeposition].iloc[0])
                 else:
                     continue
             
-
+            #same as above, determines the replacement for the second duplicate player
             if lengthdupes > 2:
                 if len(replacementppg2) > 1:
                     maxppgchoice2 = max(replacementppg2)
@@ -387,28 +391,30 @@ def sortplayers():
                     maxppgchoice2 = replacementppg2[0]
                     
                 replacementchoice2 = teamroster[(teamroster['PPG'] == maxppgchoice2) & (teamroster['Player Name'].isin(bestoptionnames))]
-            
+           
+                #same as above, finds the names and positions to remove
                 for dupeposition in dupepos:
                     if dupeposition in replacementchoice2.iloc[0]['Position']:
                         removeposlist.append(dupeposition)
                         removenamelist.append(duplicates["Player Name"][duplicates['Assigned Position'] == dupeposition].iloc[0])
                     else:
                         continue
-
+                        
+            #posremoves selects the best roster minus the duplicate players
             posremoves = bestroster[(~bestroster["Assigned Position"].isin(removeposlist)) & (~bestroster["Player Name"].isin(removenamelist))]
 
-
-            if lengthdupes < 3:
+            #assembles the final roster by adding the barebones roster, with the removed duplicates and the replacement choice
+            if lengthdupes < 3:    #for teams with only 1 duplicate player
                 finalroster = pd.concat([posremoves, duplicateadd, replacementchoice],axis=0,ignore_index=True)
                 print(team)
                 print(finalroster)  
-            else:
+            else:                   #for teams with two duplicate players
                 finalroster = pd.concat([posremoves, duplicateadd, replacementchoice, replacementchoice2],axis=0,ignore_index=True)
                 print(team)
                 print(finalroster)
 
         else:
-            finalroster = bestroster
+            finalroster = bestroster    #if a team has no duplicates then it just converts the bestroster to the finalroster
             print(team)
             print(finalroster)
             continue
