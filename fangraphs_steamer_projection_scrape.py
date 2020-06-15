@@ -44,12 +44,12 @@ def fantraxscrape():
     #username = driver.find_element_by_id("mat-input-0")
     username = driver.find_element_by_xpath("//input[@formcontrolname='email']")
     username.clear()
-    username.send_keys("colefitz88")            #<-------username input
+    username.send_keys("OMITTED")            #<-------username input
 
     #password = driver.find_element_by_id("mat-input-1")
     password = driver.find_element_by_xpath("//input[@formcontrolname='password']")
     password.clear()
-    password.send_keys("Lolninja1")             #<-------password input
+    password.send_keys("OMITTED")             #<-------password input
 
     driver.implicitly_wait(3)
 
